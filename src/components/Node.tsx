@@ -6,17 +6,19 @@ import { MindNode } from "@/app/types/node"
 type Props = {
   node: MindNode
   setNodes: React.Dispatch<React.SetStateAction<MindNode[]>>
+  isConnecting: boolean
+  isConnectingFrom: boolean
+  onConnectStart: (id: string) => void
+  onConnectEnd: (id: string) => void
 }
 
-export default function NodeComponent({ node, setNodes }: Props) {
+export default function NodeComponent({ node, setNodes, isConnecting, isConnectingFrom, onConnectStart, onConnectEnd }: Props) {
   const [dragging, setDragging] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
-  
   const [editText, setEditText] = useState(node.text)
   const [editDescription, setEditDescription] = useState(node.description || "")
-  
   const [isHovered, setIsHovered] = useState(false)
-  
+
   const titleRef = useRef<HTMLTextAreaElement>(null)
   const descRef = useRef<HTMLTextAreaElement>(null)
 
@@ -42,13 +44,13 @@ export default function NodeComponent({ node, setNodes }: Props) {
 
   function handleEditComplete() {
     setIsEditing(false)
-    setNodes(prev => prev.map(n => 
-      n.id === node.id 
-        ? { 
-            ...n, 
+    setNodes(prev => prev.map(n =>
+      n.id === node.id
+        ? {
+            ...n,
             text: editText.trim() !== "" ? editText : node.text,
             description: editDescription.trim() !== "" ? editDescription : undefined
-          } 
+          }
         : n
     ))
   }
@@ -84,6 +86,12 @@ export default function NodeComponent({ node, setNodes }: Props) {
       onMouseUp={handleMouseUp}
       onMouseMove={handleMouseMove}
       onDoubleClick={() => setIsEditing(true)}
+      onClick={(e) => {
+        if (isConnecting && !isConnectingFrom) {
+          e.stopPropagation()
+          onConnectEnd(node.id)
+        }
+      }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
@@ -93,10 +101,21 @@ export default function NodeComponent({ node, setNodes }: Props) {
         background: "white",
         padding: "12px 16px",
         borderRadius: "12px",
-        border: isEditing ? "1px solid #333" : "1px solid #e2e8f0",
-        boxShadow: dragging ? "0 10px 25px rgba(0,0,0,0.1)" : "0 2px 10px rgba(0,0,0,0.05)",
+        border: isConnectingFrom
+          ? "1px solid #10a37f"
+          : isEditing
+          ? "1px solid #333"
+          : "1px solid #e2e8f0",
+        boxShadow: dragging
+          ? "0 10px 25px rgba(0,0,0,0.1)"
+          : isConnecting && !isConnectingFrom
+          ? "0 0 0 2px rgba(16,163,127,0.15)"
+          : "0 2px 10px rgba(0,0,0,0.05)",
         minWidth: "100px",
-        cursor: isEditing ? "text" : dragging ? "grabbing" : "grab",
+        cursor: isConnecting
+          ? isConnectingFrom ? "default" : "pointer"
+          : isEditing ? "text"
+          : dragging ? "grabbing" : "grab",
         transition: dragging || isEditing ? "none" : "all 0.2s ease",
         zIndex: dragging || isEditing ? 10 : isHovered ? 5 : 1,
         userSelect: "none"
@@ -126,7 +145,6 @@ export default function NodeComponent({ node, setNodes }: Props) {
             pointerEvents: isHovered ? "auto" : "none",
             transition: "all 0.2s ease"
           }}
-          className="delete-btn"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="3 6 5 6 21 6"></polyline>
@@ -134,15 +152,48 @@ export default function NodeComponent({ node, setNodes }: Props) {
             <line x1="10" y1="11" x2="10" y2="17"></line>
             <line x1="14" y1="11" x2="14" y2="17"></line>
           </svg>
-          <style jsx>{`
-            .delete-btn:hover { background: #f1f5f9 !important; }
-          `}</style>
+        </button>
+      )}
+
+      {/* 接続ボタン */}
+      {!isEditing && (
+        <button
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (isConnecting) {
+              onConnectEnd(node.id)
+            } else {
+              onConnectStart(node.id)
+            }
+          }}
+          style={{
+            position: "absolute",
+            top: "-8px",
+            left: "-8px",
+            background: isConnectingFrom ? "#10a37f" : "white",
+            color: isConnectingFrom ? "white" : "#333",
+            border: "1px solid #e2e8f0",
+            borderRadius: "50%",
+            width: "24px",
+            height: "24px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            boxShadow: "0 4px 8px rgba(0,0,0,0.1)",
+            opacity: isHovered || isConnecting ? 1 : 0,
+            pointerEvents: isHovered || isConnecting ? "auto" : "none",
+            transition: "all 0.2s ease",
+            fontSize: "14px"
+          }}
+        >
+          ⌁
         </button>
       )}
 
       {isEditing ? (
-        // ★ ここが肝！全体を囲むdivにonBlurをつけて、内部移動なら閉じないようにした
-        <div 
+        <div
           style={{ display: "flex", flexDirection: "column", gap: "6px" }}
           onBlur={(e) => {
             if (!e.currentTarget.contains(e.relatedTarget)) {
@@ -150,7 +201,6 @@ export default function NodeComponent({ node, setNodes }: Props) {
             }
           }}
         >
-          {/* タイトル用 */}
           <textarea
             ref={titleRef}
             value={editText}
@@ -168,8 +218,6 @@ export default function NodeComponent({ node, setNodes }: Props) {
             rows={1}
             placeholder="タイトル"
           />
-          
-          {/* 長文（分析文）用 */}
           <textarea
             ref={descRef}
             value={editDescription}
@@ -182,7 +230,7 @@ export default function NodeComponent({ node, setNodes }: Props) {
             style={{
               border: "none", outline: "none", width: "100%", background: "transparent",
               fontSize: "11px", fontFamily: "inherit", color: "#666",
-              resize: "none", overflow: "hidden", padding: 0, margin: 0, display: "block", 
+              resize: "none", overflow: "hidden", padding: 0, margin: 0, display: "block",
               lineHeight: "1.5", maxWidth: "180px"
             }}
             rows={1}
@@ -195,9 +243,9 @@ export default function NodeComponent({ node, setNodes }: Props) {
             {node.text}
           </div>
           {node.description && (
-            <div style={{ 
-              fontSize: "11px", lineHeight: "1.5", color: "#666", 
-              marginTop: "6px", maxWidth: "180px", wordBreak: "break-word" 
+            <div style={{
+              fontSize: "11px", lineHeight: "1.5", color: "#666",
+              marginTop: "6px", maxWidth: "180px", wordBreak: "break-word"
             }}>
               {node.description}
             </div>

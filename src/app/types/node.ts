@@ -4,4 +4,5 @@ export type MindNode = {
   description?: string
   x: number
   y: number
+  connections: string[] // 接続先のidリスト
 }

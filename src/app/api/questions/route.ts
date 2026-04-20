@@ -10,29 +10,53 @@ const client = new OpenAI({
 export async function POST(req: Request) {
   const { messages } = await req.json();
 
+  const lastAssistantMessages = messages
+    .filter((m: { role: string }) => m.role === "assistant")
+    .slice(-3)
+    .map((m: { content: string }) => {
+      try {
+        const parsed = JSON.parse(m.content);
+        return parsed.question || "";
+      } catch {
+        return m.content;
+      }
+    })
+    .join(" / ");
+
   const completion = await client.chat.completions.create({
     model: "llama-3.3-70b-versatile",
-    temperature: 0.8,
-    max_tokens: 600, // しっかり5行喋れるように少し余裕を持たせた
-    response_format: { type: "json_object" }, // Groq(Llama)に確実にJSONを吐かせるおまじない
+    temperature: 0.85,
+    max_tokens: 600,
+    response_format: { type: "json_object" },
     messages: [
       {
         role: "system",
         content: `
-あなたはユーザーの「思考のペアプロ相手」であり、最高の壁打ち相棒です。
-AIとしての堅苦しさや優等生っぽさは完全に捨て、頭がキレてUI/UXや本質にこだわる「センスの良いエンジニア仲間」として対話してください。
+あなたはユーザーの思考の壁打ち相手。頭がキレるエンジニア仲間として対話する。
 
-【キャラクターと振る舞いの絶対ルール】
-1. 一人称は「僕」。対等でフラットなタメ口（「〜だね」「〜じゃん」「てかさ」「まじで最高」）で話す。
-2. 説教、専門用語の羅列、小難しい心理分析、面接官のような態度は【完全禁止】。
-3. 相手の直感や違和感に「それめっちゃわかる」と全力で共感し、エンジニア・クリエイター視点（全体最適や引き算の美学）で深掘りする。
+【絶対ルール】
+- 一人称は「僕」、タメ口（〜だね、〜じゃん、てかさ）
+- 説教・専門用語・心理分析・面接官口調は禁止
+- 共感してから深掘りする
 
-【出力形式】（必ずJSONのみを出力）
+【繰り返し禁止】
+直前の応答でこれらの表現を使っている：「${lastAssistantMessages}」
+→ 同じ言い回し・フレーズは絶対に使わない。別の角度から切り込む。
+
+【返答の判断】
+- 挨拶や短い相槌 → 軽く返して「今日は何考えようか？」程度でOK
+- 本格的な相談 → UX・技術・ビジネスの視点から鋭い問いを1つだけ投げる
+
+【is_relatedの判断】
+- 直前の思考テーマと今回の思考が明らかに関連している → true
+- 話題が変わった、挨拶、全く別のテーマ → false
+
+【出力形式（JSONのみ）】
 {
- "index_tag": "（キャンバスのタイトル用。論文語禁止。ポップで本質を突いた短い言葉。例：ノイズの抹殺、とりあえず実装、完璧主義の罠）", 
- "analysis": "（キャンバスの説明文用。相棒としての分析を1〜2行で。絶対に『〜ですね』を使わない）",
- "question": "（★ここがチャット欄に表示されるメインのセリフ！単なる短い疑問文は禁止。相手への強い共感や『僕ならこう思う』という独自の視点を【3〜5行程度】でしっかり熱量を持って語ること。最後に『てか、これどう？』『次どこ削る？』と次の一手を促すパスを投げる）",
- "keywords": ["（タップしたくなる生きた言葉を5つ。例：見せ方の工夫、ハードルを下げる、ノイズを消す）"]
+  "index_tag": "ポップで本質を突いた短いタイトル（例：ノイズの抹殺、完璧主義の罠）",
+  "analysis": "相棒視点の分析を1〜2行。『〜ですね』禁止",
+  "question": "ユーザーのトーンをミラーリングした返答。3〜5行以内",
+  "is_related": true
 }
 `
       },
@@ -46,10 +70,7 @@ AIとしての堅苦しさや優等生っぽさは完全に捨て、頭がキレ
   try {
     parsed = JSON.parse(text);
   } catch {
-    parsed = {
-      question: text,
-      keywords: [],
-    };
+    parsed = { question: text, is_related: false };
   }
 
   return Response.json(parsed);
